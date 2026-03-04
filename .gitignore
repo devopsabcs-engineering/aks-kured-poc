@@ -419,6 +419,7 @@ FodyWeavers.xsd
 
 # Test output
 test-results/
+!test-results/availability-history.csv
 proof-artifacts/
 
 # Logs
