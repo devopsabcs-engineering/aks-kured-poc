@@ -109,9 +109,30 @@ jobs:
         run: |
           echo "Starting availability test against http://$SERVICE_IP for ${TEST_DURATION}s"
 
+          # --- Warmup phase: wait until the service responds at least once ---
+          echo "Warming up (waiting for first successful response)..."
+          WARMUP_LIMIT=60
+          WARMUP_START=$(date +%s)
+          while true; do
+            WARMUP_ELAPSED=$(( $(date +%s) - WARMUP_START ))
+            if [ "$WARMUP_ELAPSED" -ge "$WARMUP_LIMIT" ]; then
+              echo "::warning::Warmup timeout after ${WARMUP_LIMIT}s — starting timed test anyway"
+              break
+            fi
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$SERVICE_IP" 2>/dev/null) || true
+            if [ "$CODE" = "200" ]; then
+              echo "Service responded (warmup took ${WARMUP_ELAPSED}s)"
+              break
+            fi
+            sleep 2
+          done
+
+          # --- Timed availability probe ---
           TOTAL=0
           SUCCESS=0
           FAIL=0
+          TRANSIENT=0
+          FAIL_LOG=""
           START=$(date +%s)
 
           while true; do
@@ -122,28 +143,79 @@ jobs:
             fi
 
             TOTAL=$((TOTAL + 1))
-            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
-              --max-time 5 "http://$SERVICE_IP" 2>/dev/null || echo "000")
+
+            # Capture HTTP code; avoid double-output by separating curl from fallback
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$SERVICE_IP" 2>/dev/null) || true
 
             if [ "$HTTP_CODE" = "200" ]; then
               SUCCESS=$((SUCCESS + 1))
+            elif [ "$HTTP_CODE" = "000" ]; then
+              # Connection failure — retry once after a short pause
+              sleep 1
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$SERVICE_IP" 2>/dev/null) || true
+              if [ "$HTTP_CODE" = "200" ]; then
+                SUCCESS=$((SUCCESS + 1))
+                TRANSIENT=$((TRANSIENT + 1))
+              else
+                FAIL=$((FAIL + 1))
+                TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                echo "${TS} FAIL: HTTP ${HTTP_CODE} (after retry)"
+                FAIL_LOG="${FAIL_LOG}| ${TS} | ${HTTP_CODE} | connection (retried) |\n"
+              fi
             else
               FAIL=$((FAIL + 1))
-              echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FAIL: HTTP $HTTP_CODE"
+              TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "${TS} FAIL: HTTP ${HTTP_CODE}"
+              FAIL_LOG="${FAIL_LOG}| ${TS} | ${HTTP_CODE} | server error |\n"
             fi
 
             sleep 1
           done
 
+          # --- Results ---
           echo ""
           echo "=== Availability Test Results ==="
-          echo "Total requests: $TOTAL"
-          echo "Successful:     $SUCCESS"
-          echo "Failed:         $FAIL"
+          echo "Total requests:     $TOTAL"
+          echo "Successful:         $SUCCESS"
+          echo "Transient (retried):$TRANSIENT"
+          echo "Failed:             $FAIL"
 
           if [ "$TOTAL" -gt 0 ]; then
             AVAILABILITY=$(echo "scale=4; $SUCCESS * 100 / $TOTAL" | bc)
-            echo "Availability:   ${AVAILABILITY}%"
+            echo "Availability:       ${AVAILABILITY}%"
+          else
+            AVAILABILITY="N/A"
+          fi
+
+          # --- Write to GitHub Step Summary ---
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🧪 Availability Test Results
+
+          | Metric | Value |
+          |---|---|
+          | **Service URL** | [http://${SERVICE_IP}](http://${SERVICE_IP}) |
+          | **Test duration** | ${TEST_DURATION}s |
+          | **Total requests** | ${TOTAL} |
+          | **Successful** | ${SUCCESS} |
+          | **Transient (retried)** | ${TRANSIENT} |
+          | **Failed** | ${FAIL} |
+          | **Availability** | ${AVAILABILITY}% |
+          | **Run** | [#${GITHUB_RUN_NUMBER}](${RUN_URL}) |
+          | **Timestamp** | $(date -u +%Y-%m-%dT%H:%M:%SZ) |
+          EOF
+
+          if [ -n "$FAIL_LOG" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+
+          <details><summary>Failure details</summary>
+
+          | Time (UTC) | HTTP Code | Category |
+          |---|---|---|
+          $(echo -e "$FAIL_LOG")
+
+          </details>
+          EOF
           fi
 
           if [ "$FAIL" -gt 0 ]; then
