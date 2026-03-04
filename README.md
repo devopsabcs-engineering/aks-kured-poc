@@ -1,4 +1,9 @@
-# AKS Kured Zero-Downtime Node Reboot POC
+---
+title: AKS Kured Zero-Downtime Node Reboot POC
+description: Proof-of-concept demonstrating zero-downtime node reboots on AKS using Kured and PodDisruptionBudgets
+author: devopsabcs-engineering
+ms.date: 2026-03-04
+---
 
 ## Overview
 
@@ -46,8 +51,8 @@ This proof-of-concept demonstrates zero-downtime node reboots on Azure Kubernete
 aks-kured-poc/
 ├── .github/
 │   └── workflows/
-│       ├── deploy.yml          # Provisions AKS, installs Kured, deploys workload
-│       ├── test.yml            # Runs availability test and simulates reboots
+│       ├── deploy.yml          # Provisions AKS, installs Kured, deploys workload (idempotent)
+│       ├── test.yml            # Runs availability test and simulates reboots (wide window by default)
 │       └── teardown.yml        # Deletes the resource group
 ├── infra/
 │   ├── main.bicep              # AKS cluster + Log Analytics (Bicep)
@@ -129,9 +134,11 @@ Add the following secrets to your repository under **Settings > Secrets and vari
 ### Option A: GitHub Actions (recommended)
 
 1. Push this repository to GitHub with the OIDC secrets configured.
-2. Go to **Actions** and trigger the **Deploy AKS Kured POC** (`deploy.yml`) workflow. Accept the defaults or override location, node count, etc.
-3. Once deployment completes, trigger the **Test AKS Kured POC** (`test.yml`) workflow. Set `simulate_reboot` to `true` to create sentinel files on all nodes.
+2. Go to **Actions** and trigger the **Deploy AKS Kured POC** (`deploy.yml`) workflow. Accept the defaults or override location, node count, etc. When the workflow finishes, the **job summary** displays a clickable public URL for the deployed service.
+3. Once deployment completes, trigger the **Test AKS Kured POC** (`test.yml`) workflow. Set `simulate_reboot` to `true` to create sentinel files on all nodes. By default the test workflow uses a **24/7 reboot window** (all days, 0 AM -- 11:59 PM) so reboots trigger immediately without waiting for the narrow production window.
 4. After validation, trigger the **Teardown AKS Kured POC** (`teardown.yml`) workflow. Type `DELETE` when prompted to confirm.
+
+> **Tip:** Both `deploy.yml` and `test.yml` are fully idempotent and safe to re-run at any time.
 
 ### Option B: Manual CLI
 
@@ -189,7 +196,7 @@ The Kured Helm values in `k8s/kured-values.yaml` define the following behavior:
 
 ### Overriding the disruption window for demos
 
-By default, Kured only reboots within the 2-6 AM UTC weekday window. To override this for an immediate demo, widen the window:
+By default, Kured only reboots within the 2--6 AM UTC weekday window. To override this for an immediate demo, widen the window:
 
 ```bash
 helm upgrade kured kured/kured \
@@ -199,6 +206,18 @@ helm upgrade kured kured/kured \
   --set configuration.endTime="11:59pm" \
   --set 'configuration.rebootDays={mo,tu,we,th,fr,sa,su}'
 ```
+
+> **Note:** The `test.yml` workflow already applies this wide window automatically.
+> The default input values are `0am`--`11:59pm` on all seven days so that the demo
+> reboot triggers immediately. Override the inputs to restore the narrow window if needed.
+
+The test workflow exposes these as input parameters:
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `kured_start_time` | `0am` | Reboot window start time |
+| `kured_end_time` | `11:59pm` | Reboot window end time |
+| `kured_reboot_days` | `mo,tu,we,th,fr,sa,su` | Comma-separated list of allowed reboot days |
 
 ## Demo Runbook
 
@@ -228,7 +247,7 @@ kubectl get daemonset kured -n kube-system
 
 ### Step 3: Override disruption window (if needed)
 
-If the current time is outside the 2-6 AM UTC weekday window, widen the Kured schedule:
+If you are running the **manual CLI** flow and the current time is outside the 2--6 AM UTC weekday window, widen the Kured schedule:
 
 ```bash
 helm upgrade kured kured/kured \
@@ -239,9 +258,13 @@ helm upgrade kured kured/kured \
   --set 'configuration.rebootDays={mo,tu,we,th,fr,sa,su}'
 ```
 
+> **Note:** When using the `test.yml` GitHub Actions workflow, this step is handled
+> automatically. The workflow defaults to a 24/7 window (`0am`--`11:59pm`, all days)
+> and reconfigures Kured via `helm upgrade` before creating sentinel files.
+
 ### Step 4: Run the test
 
-Trigger the `test.yml` workflow with `simulate_reboot` set to `true`. This creates `/var/run/reboot-required` sentinel files on every node and runs a continuous availability probe.
+Trigger the `test.yml` workflow with `simulate_reboot` set to `true`. This widens the Kured reboot window (using the input parameters), creates `/var/run/reboot-required` sentinel files on every node, and runs a continuous availability probe.
 
 Alternatively, run the local end-to-end test:
 

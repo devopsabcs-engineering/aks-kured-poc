@@ -21,6 +21,21 @@ on:
         options:
           - 'true'
           - 'false'
+      kured_start_time:
+        description: 'Kured reboot window start time (e.g. 0am for demo, 2am for default)'
+        required: false
+        default: '0am'
+        type: string
+      kured_end_time:
+        description: 'Kured reboot window end time (e.g. 11:59pm for demo, 6am for default)'
+        required: false
+        default: '11:59pm'
+        type: string
+      kured_reboot_days:
+        description: 'Kured reboot days (comma-separated, e.g. mo,tu,we,th,fr,sa,su)'
+        required: false
+        default: 'mo,tu,we,th,fr,sa,su'
+        type: string
 
 permissions:
   id-token: write
@@ -159,6 +174,29 @@ jobs:
         with:
           resource-group: ${{ env.RESOURCE_GROUP }}
           cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Widen Kured Reboot Window
+        run: |
+          KURED_START="${{ github.event.inputs.kured_start_time || '0am' }}"
+          KURED_END="${{ github.event.inputs.kured_end_time || '11:59pm' }}"
+          KURED_DAYS="${{ github.event.inputs.kured_reboot_days || 'mo,tu,we,th,fr,sa,su' }}"
+          echo "Reconfiguring Kured window: ${KURED_START} - ${KURED_END}, days: ${KURED_DAYS}"
+          helm repo add --force-update kured https://kubereboot.github.io/charts
+          helm repo update
+          helm upgrade kured kured/kured \
+            --namespace kube-system \
+            --values ./k8s/kured-values.yaml \
+            --set "configuration.startTime=${KURED_START}" \
+            --set "configuration.endTime=${KURED_END}" \
+            --set "configuration.rebootDays={${KURED_DAYS}}" \
+            --wait \
+            --timeout 5m
+          echo "Kured reboot window updated successfully"
 
       - name: Create Reboot Sentinel on All Nodes
         run: |
