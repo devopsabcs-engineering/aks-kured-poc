@@ -193,7 +193,7 @@ The Kured Helm values in `k8s/kured-values.yaml` define the following behavior:
 | `drainGracePeriod`| 60s               | Grace period for pod termination during drain              |
 | `drainTimeout`    | 300s              | Maximum time to wait for drain to complete                 |
 | `lockTtl`         | 30m               | Time-to-live for the distributed reboot lock               |
-| `lockReleaseDelay`| 5m                | Delay after reboot before releasing the lock               |
+| `lockReleaseDelay`| 1m                | Delay after reboot before releasing the lock (short for POC) |
 | `concurrency`     | 1                 | Only one node reboots at a time                            |
 
 ### Overriding the disruption window for demos
@@ -326,18 +326,29 @@ Trigger the `teardown.yml` workflow and type `DELETE` to confirm. This deletes t
 
 ### Scheduled runs
 
-The `test.yml` workflow runs automatically **every 15 minutes** via a cron schedule. Each run appends a row to [test-results/availability-history.csv](test-results/availability-history.csv) (rendered as a sortable table in the GitHub UI) and writes a history summary to the workflow run's **job summary** page.
+The `test.yml` workflow runs automatically **every 30 minutes** via a cron schedule. Each run:
+
+1. Creates reboot sentinel files on all nodes (triggering Kured)
+2. Runs a 20-minute availability probe **while reboots are in progress**
+3. Collects per-node reboot counts and appends results to [test-results/availability-history.csv](test-results/availability-history.csv)
+
+The CSV is rendered as a sortable table in the GitHub UI, and a history summary appears on the workflow run's **job summary** page.
 
 Scheduled runs use the default input values:
 
 | Parameter | Default |
 | --- | --- |
 | `environment` | `poc` |
-| `test_duration` | `300` (5 minutes) |
+| `test_duration` | `1200` (20 minutes) |
 | `simulate_reboot` | `true` |
 | `kured_start_time` | `0am` |
 | `kured_end_time` | `11:59pm` |
 | `kured_reboot_days` | `mo,tu,we,th,fr,sa,su` |
+
+> **Why 20 minutes?** Kured reboots nodes one at a time. With a 1-minute poll
+> interval and a 1-minute lock release delay, each node takes roughly 5--7 minutes
+> to cordon, drain, reboot, and rejoin. Three nodes require about 15--20 minutes
+> total. The availability probe must run long enough to capture all transitions.
 
 To pause scheduled runs, disable the workflow from **Actions > Test AKS Kured POC > ··· > Disable workflow**. Re-enable it when ready.
 
@@ -417,22 +428,34 @@ KubeEvents
 
 **Kured container logs:**
 
+> **Note:** The `omsagent` addon populates the `ContainerLog` table (v1). If you
+> have migrated to Azure Monitor Agent with data collection rules, use
+> `ContainerLogV2` instead.
+
 ```kql
-ContainerLogV2
+ContainerLog
 | where TimeGenerated > ago(4h)
-| where PodNamespace == "kube-system"
-| where PodName startswith "kured-"
-| project TimeGenerated, PodName, LogMessage
+| where ContainerID in (
+    KubePodInventory
+    | where Namespace == "kube-system"
+    | where Name startswith "kured-"
+    | distinct ContainerID
+)
+| project TimeGenerated, LogEntry
 | order by TimeGenerated asc
 ```
 
 **Verify zero gaps in application availability:**
 
 ```kql
-ContainerLogV2
+ContainerLog
 | where TimeGenerated > ago(4h)
-| where PodNamespace == "demo"
-| where PodName startswith "zero-downtime-web"
+| where ContainerID in (
+    KubePodInventory
+    | where Namespace == "demo"
+    | where Name startswith "zero-downtime-web"
+    | distinct ContainerID
+)
 | summarize Count = count() by bin(TimeGenerated, 1m)
 | order by TimeGenerated asc
 ```

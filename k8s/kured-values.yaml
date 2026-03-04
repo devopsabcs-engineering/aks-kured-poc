@@ -21,7 +21,7 @@ configuration:
 
   # Lock safety
   lockTtl: "30m"
-  lockReleaseDelay: "5m"
+  lockReleaseDelay: "1m"
 
   # Annotate nodes with reboot status
   annotateNodes: true
