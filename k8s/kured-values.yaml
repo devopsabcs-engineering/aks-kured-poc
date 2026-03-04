@@ -1,0 +1,56 @@
+# Kured Helm chart configuration for AKS Kured POC
+
+configuration:
+  # Disruption window: weekdays 2-6 AM UTC
+  rebootDays:
+    - mo
+    - tu
+    - we
+    - th
+    - fr
+  startTime: "2am"
+  endTime: "6am"
+  timeZone: "UTC"
+
+  # Check for sentinel every 1 minute (frequent for POC demo)
+  period: "1m"
+
+  # Drain configuration
+  drainGracePeriod: "60"
+  drainTimeout: "300s"
+
+  # Lock safety
+  lockTtl: "30m"
+  lockReleaseDelay: "5m"
+
+  # Annotate nodes with reboot status
+  annotateNodes: true
+
+  # Only one node at a time
+  concurrency: 1
+
+  # Logging
+  logFormat: "text"
+
+# Metrics for monitoring
+metrics:
+  create: true
+  labels: {}
+  interval: 60s
+
+service:
+  create: true
+  port: 8080
+
+# Linux nodes only
+nodeSelector:
+  kubernetes.io/os: linux
+
+# Resource limits
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 50m
+    memory: 64Mi

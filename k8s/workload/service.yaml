@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: zero-downtime-web
+  namespace: demo
+  labels:
+    app: zero-downtime-web
+spec:
+  type: LoadBalancer
+  selector:
+    app: zero-downtime-web
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http

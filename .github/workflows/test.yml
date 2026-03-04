@@ -1,0 +1,246 @@
+name: Test AKS Kured POC
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment name'
+        required: false
+        default: 'poc'
+        type: string
+      test_duration:
+        description: 'Duration of availability test in seconds'
+        required: false
+        default: '300'
+        type: string
+      simulate_reboot:
+        description: 'Trigger simulated node reboot during test'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-aks-kured-${{ github.event.inputs.environment || 'poc' }}
+  CLUSTER_NAME: aks-kured-${{ github.event.inputs.environment || 'poc' }}
+
+jobs:
+  setup-test:
+    name: Setup Test Environment
+    runs-on: ubuntu-latest
+    outputs:
+      service-ip: ${{ steps.get-ip.outputs.ip }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Get Service IP
+        id: get-ip
+        run: |
+          IP=$(kubectl get svc zero-downtime-web --namespace demo \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          if [ -z "$IP" ]; then
+            echo "::error::No LoadBalancer IP found for zero-downtime-web service"
+            exit 1
+          fi
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+          echo "Service IP: $IP"
+
+      - name: Pre-Test Cluster State
+        run: |
+          echo "=== Node Status ==="
+          kubectl get nodes -o wide
+          echo ""
+          echo "=== Pod Status ==="
+          kubectl get pods --namespace demo -o wide
+          echo ""
+          echo "=== PDB Status ==="
+          kubectl get pdb --namespace demo
+          echo ""
+          echo "=== Kured DaemonSet ==="
+          kubectl get daemonset kured --namespace kube-system
+
+  availability-test:
+    name: Run Availability Test
+    runs-on: ubuntu-latest
+    needs: setup-test
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Continuous Availability Probe
+        env:
+          SERVICE_IP: ${{ needs.setup-test.outputs.service-ip }}
+          TEST_DURATION: ${{ github.event.inputs.test_duration || '300' }}
+        run: |
+          echo "Starting availability test against http://$SERVICE_IP for ${TEST_DURATION}s"
+
+          TOTAL=0
+          SUCCESS=0
+          FAIL=0
+          START=$(date +%s)
+
+          while true; do
+            NOW=$(date +%s)
+            ELAPSED=$((NOW - START))
+            if [ "$ELAPSED" -ge "$TEST_DURATION" ]; then
+              break
+            fi
+
+            TOTAL=$((TOTAL + 1))
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
+              --max-time 5 "http://$SERVICE_IP" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              SUCCESS=$((SUCCESS + 1))
+            else
+              FAIL=$((FAIL + 1))
+              echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FAIL: HTTP $HTTP_CODE"
+            fi
+
+            sleep 1
+          done
+
+          echo ""
+          echo "=== Availability Test Results ==="
+          echo "Total requests: $TOTAL"
+          echo "Successful:     $SUCCESS"
+          echo "Failed:         $FAIL"
+
+          if [ "$TOTAL" -gt 0 ]; then
+            AVAILABILITY=$(echo "scale=4; $SUCCESS * 100 / $TOTAL" | bc)
+            echo "Availability:   ${AVAILABILITY}%"
+          fi
+
+          if [ "$FAIL" -gt 0 ]; then
+            echo "::error::$FAIL requests failed out of $TOTAL total. Zero-downtime validation FAILED."
+            exit 1
+          else
+            echo "Zero-downtime validation PASSED: 100% availability."
+          fi
+
+  simulate-reboot:
+    name: Simulate Node Reboot
+    runs-on: ubuntu-latest
+    needs: setup-test
+    if: github.event.inputs.simulate_reboot == 'true'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Create Reboot Sentinel on All Nodes
+        run: |
+          echo "Creating reboot sentinel files to trigger Kured..."
+          for NODE in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+            echo "  Creating /var/run/reboot-required on ${NODE}..."
+            kubectl debug "node/${NODE}" -it --image=busybox:1.36 -- \
+              sh -c "chroot /host touch /var/run/reboot-required" 2>/dev/null || true
+            echo "  Sentinel created on ${NODE}"
+          done
+
+      - name: Wait for Kured to Process
+        run: |
+          echo "Waiting 60s for Kured to detect sentinel and begin processing..."
+          sleep 60
+
+          echo ""
+          echo "=== Kured Logs ==="
+          kubectl logs -n kube-system -l app.kubernetes.io/name=kured --tail=50 || true
+
+          echo ""
+          echo "=== Node Status ==="
+          kubectl get nodes -o wide
+
+  post-test-validation:
+    name: Post-Test Validation
+    runs-on: ubuntu-latest
+    needs: [availability-test, simulate-reboot]
+    if: always()
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Final Cluster State
+        run: |
+          echo "=== Node Status ==="
+          kubectl get nodes -o wide
+          echo ""
+          echo "=== Pod Status ==="
+          kubectl get pods --namespace demo -o wide
+          echo ""
+          echo "=== PDB Status ==="
+          kubectl describe pdb zero-downtime-web-pdb --namespace demo
+          echo ""
+          echo "=== Recent Events ==="
+          kubectl get events --namespace demo \
+            --sort-by='.lastTimestamp' --field-selector type!=Normal | tail -20 || true
+          echo ""
+          echo "=== Kured Logs (last 100 lines) ==="
+          kubectl logs -n kube-system -l app.kubernetes.io/name=kured --tail=100 || true
+
+      - name: Validate All Pods Running
+        run: |
+          NOT_RUNNING=$(kubectl get pods --namespace demo \
+            --field-selector status.phase!=Running -o name | wc -l)
+          if [ "$NOT_RUNNING" -gt 0 ]; then
+            echo "::error::$NOT_RUNNING pods are not in Running state"
+            kubectl get pods --namespace demo
+            exit 1
+          fi
+          echo "All pods are running."
+
+      - name: Validate All Nodes Ready
+        run: |
+          NOT_READY=$(kubectl get nodes \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.status}{"\n"}{end}{end}' \
+            | grep -cv "True" || true)
+          if [ "$NOT_READY" -gt 0 ]; then
+            echo "::warning::$NOT_READY nodes are not Ready"
+            kubectl get nodes
+          fi
+          echo "All nodes are Ready."

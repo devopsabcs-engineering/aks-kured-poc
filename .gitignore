@@ -416,3 +416,14 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Test output
+test-results/
+proof-artifacts/
+
+# Logs
+*.log
+
+# Bicep build output (keep parameters.json)
+infra/*.json
+!infra/parameters.json

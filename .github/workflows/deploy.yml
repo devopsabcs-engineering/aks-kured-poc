@@ -1,0 +1,174 @@
+name: Deploy AKS Kured POC
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment name'
+        required: false
+        default: 'poc'
+        type: string
+      location:
+        description: 'Azure region'
+        required: false
+        default: 'canadacentral'
+        type: string
+      node_count:
+        description: 'Number of AKS nodes'
+        required: false
+        default: '3'
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-aks-kured-${{ github.event.inputs.environment || 'poc' }}
+  CLUSTER_NAME: aks-kured-${{ github.event.inputs.environment || 'poc' }}
+  LOCATION: ${{ github.event.inputs.location || 'canadacentral' }}
+  NODE_COUNT: ${{ github.event.inputs.node_count || '3' }}
+
+jobs:
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    outputs:
+      cluster-name: ${{ steps.deploy-bicep.outputs.clusterName }}
+      resource-group: ${{ env.RESOURCE_GROUP }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --tags project=aks-kured-poc environment=${{ github.event.inputs.environment || 'poc' }}
+
+      - name: Deploy Bicep Template
+        id: deploy-bicep
+        uses: azure/arm-deploy@v2
+        with:
+          subscriptionId: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
+          template: ./infra/main.bicep
+          parameters: >-
+            clusterName=${{ env.CLUSTER_NAME }}
+            location=${{ env.LOCATION }}
+            nodeCount=${{ env.NODE_COUNT }}
+          failOnStdErr: false
+
+      - name: Verify Deployment
+        run: |
+          az aks show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.CLUSTER_NAME }} \
+            --query "provisioningState" \
+            --output tsv
+
+  install-kured:
+    name: Install Kured
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Add Kured Helm Repo
+        run: |
+          helm repo add kured https://kubereboot.github.io/charts
+          helm repo update
+
+      - name: Install Kured
+        run: |
+          helm upgrade --install kured kured/kured \
+            --namespace kube-system \
+            --values ./k8s/kured-values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify Kured DaemonSet
+        run: |
+          kubectl get daemonset kured --namespace kube-system
+          kubectl rollout status daemonset/kured --namespace kube-system --timeout=120s
+
+  deploy-workload:
+    name: Deploy Sample Workload
+    runs-on: ubuntu-latest
+    needs: install-kured
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      - name: Deploy Workload Manifests
+        run: |
+          kubectl apply -f ./k8s/workload/namespace.yaml
+          kubectl apply -f ./k8s/workload/deployment.yaml
+          kubectl apply -f ./k8s/workload/service.yaml
+          kubectl apply -f ./k8s/workload/pdb.yaml
+
+      - name: Wait for Deployment Rollout
+        run: |
+          kubectl rollout status deployment/zero-downtime-web \
+            --namespace demo \
+            --timeout=300s
+
+      - name: Verify PDB
+        run: |
+          kubectl get pdb --namespace demo
+          echo "---"
+          kubectl describe pdb zero-downtime-web-pdb --namespace demo
+
+      - name: Verify Service Endpoint
+        run: |
+          echo "Waiting for LoadBalancer IP..."
+          for i in $(seq 1 30); do
+            IP=$(kubectl get svc zero-downtime-web --namespace demo -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            if [ -n "$IP" ]; then
+              echo "Service IP: $IP"
+              curl -sf --max-time 10 "http://$IP" && echo "Service is reachable" && exit 0
+              echo "Service not yet responding, retrying..."
+            fi
+            sleep 10
+          done
+          echo "::warning::Service did not become reachable within timeout"

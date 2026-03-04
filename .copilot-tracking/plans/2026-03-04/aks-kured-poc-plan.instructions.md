@@ -49,81 +49,81 @@ Deploy an AKS cluster with 3 Linux (Ubuntu) nodes, install Kured for controlled 
 
 ## Implementation Checklist
 
-### [ ] Implementation Phase 1: Infrastructure as Code (Bicep)
+### [x] Implementation Phase 1: Infrastructure as Code (Bicep)
 
 <!-- parallelizable: true -->
 
-* [ ] Step 1.1: Create `infra/main.bicep` with AKS cluster definition
+* [x] Step 1.1: Create `infra/main.bicep` with AKS cluster definition
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 17-60)
-* [ ] Step 1.2: Create `infra/parameters.json` with default parameter values
+* [x] Step 1.2: Create `infra/parameters.json` with default parameter values
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 62-97)
-* [ ] Step 1.3: Validate Bicep compilation
+* [x] Step 1.3: Validate Bicep compilation
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 100-105)
   * Run `az bicep build --file infra/main.bicep` to confirm no errors
 
-### [ ] Implementation Phase 2: Kubernetes Manifests (Workload + Kured)
+### [x] Implementation Phase 2: Kubernetes Manifests (Workload + Kured)
 
 <!-- parallelizable: true -->
 
-* [ ] Step 2.1: Create `k8s/workload/namespace.yaml` for demo namespace
+* [x] Step 2.1: Create `k8s/workload/namespace.yaml` for demo namespace
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 111-132)
-* [ ] Step 2.2: Create `k8s/workload/deployment.yaml` with 3-replica nginx, anti-affinity, preStop hook
+* [x] Step 2.2: Create `k8s/workload/deployment.yaml` with 3-replica nginx, anti-affinity, preStop hook
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 135-165)
-* [ ] Step 2.3: Create `k8s/workload/service.yaml` with LoadBalancer type
+* [x] Step 2.3: Create `k8s/workload/service.yaml` with LoadBalancer type
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 167-200)
-* [ ] Step 2.4: Create `k8s/workload/pdb.yaml` with `minAvailable: 2`
+* [x] Step 2.4: Create `k8s/workload/pdb.yaml` with `minAvailable: 2`
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 203-237)
-* [ ] Step 2.5: Create `k8s/kured-values.yaml` with disruption window and drain settings
+* [x] Step 2.5: Create `k8s/kured-values.yaml` with disruption window and drain settings
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 239-302)
 
-### [ ] Implementation Phase 3: Test and Monitoring Scripts
+### [x] Implementation Phase 3: Test and Monitoring Scripts
 
 <!-- parallelizable: true -->
 
-* [ ] Step 3.1: Create `scripts/availability-probe.sh` — continuous curl probe with CSV logging
+* [x] Step 3.1: Create `scripts/availability-probe.sh` — continuous curl probe with CSV logging
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 305-332)
-* [ ] Step 3.2: Create `scripts/e2e-test.sh` — orchestrates sentinel creation, probing, and result analysis
+* [x] Step 3.2: Create `scripts/e2e-test.sh` — orchestrates sentinel creation, probing, and result analysis
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 334-365)
-* [ ] Step 3.3: Create `scripts/collect-artifacts.sh` — gathers Kured logs, KQL results, PDB snapshots
+* [x] Step 3.3: Create `scripts/collect-artifacts.sh` — gathers Kured logs, KQL results, PDB snapshots
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 367-396)
 
-### [ ] Implementation Phase 4: GitHub Actions Workflows
+### [x] Implementation Phase 4: GitHub Actions Workflows
 
 <!-- parallelizable: false -->
 
 Depends on Phase 1–3 file paths being finalized.
 
-* [ ] Step 4.1: Create `.github/workflows/deploy.yml` — tear-up workflow (RG + Bicep + Helm + workload)
+* [x] Step 4.1: Create `.github/workflows/deploy.yml` — tear-up workflow (RG + Bicep + Helm + workload)
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 399-441)
-* [ ] Step 4.2: Create `.github/workflows/teardown.yml` — destroy resource group
+* [x] Step 4.2: Create `.github/workflows/teardown.yml` — destroy resource group
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 443-463)
-* [ ] Step 4.3: Create `.github/workflows/test.yml` — availability test + simulated reboot
+* [x] Step 4.3: Create `.github/workflows/test.yml` — availability test + simulated reboot
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 465-497)
 
-### [ ] Implementation Phase 5: Documentation
+### [x] Implementation Phase 5: Documentation
 
 <!-- parallelizable: false -->
 
 Depends on all prior phases for accurate file references.
 
-* [ ] Step 5.1: Create `README.md` with architecture overview, prerequisites, quickstart, demo runbook
+* [x] Step 5.1: Create `README.md` with architecture overview, prerequisites, quickstart, demo runbook
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 499-532)
-* [ ] Step 5.2: Update `.gitignore` for Bicep build artifacts and test output
+* [x] Step 5.2: Update `.gitignore` for Bicep build artifacts and test output
   * Details: .copilot-tracking/details/2026-03-04/aks-kured-poc-details.md (Lines 534-553)
 
-### [ ] Implementation Phase 6: Validation
+### [x] Implementation Phase 6: Validation
 
 <!-- parallelizable: false -->
 
-* [ ] Step 6.1: Run full project validation
+* [x] Step 6.1: Run full project validation
   * Execute `az bicep build --file infra/main.bicep` for Bicep compilation
   * Validate all YAML manifests with `kubectl apply --dry-run=client -f k8s/workload/`
   * Verify GitHub Actions workflow syntax is valid YAML
   * Confirm all scripts have executable permissions and valid bash syntax (`bash -n scripts/*.sh`)
-* [ ] Step 6.2: Fix minor validation issues
+* [x] Step 6.2: Fix minor validation issues
   * Iterate on syntax errors, lint warnings, and YAML formatting
   * Apply fixes directly when corrections are straightforward
-* [ ] Step 6.3: Report blocking issues
+* [x] Step 6.3: Report blocking issues
   * Document issues requiring additional research
   * Provide next steps if any blocking problems are found
 
