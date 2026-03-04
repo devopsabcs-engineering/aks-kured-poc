@@ -103,7 +103,7 @@ jobs:
 
       - name: Add Kured Helm Repo
         run: |
-          helm repo add kured https://kubereboot.github.io/charts
+          helm repo add --force-update kured https://kubereboot.github.io/charts
           helm repo update
 
       - name: Install Kured
@@ -160,15 +160,56 @@ jobs:
           kubectl describe pdb zero-downtime-web-pdb --namespace demo
 
       - name: Verify Service Endpoint
+        id: service-ip
         run: |
           echo "Waiting for LoadBalancer IP..."
+          SERVICE_IP=""
           for i in $(seq 1 30); do
             IP=$(kubectl get svc zero-downtime-web --namespace demo -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
             if [ -n "$IP" ]; then
               echo "Service IP: $IP"
-              curl -sf --max-time 10 "http://$IP" && echo "Service is reachable" && exit 0
+              SERVICE_IP="$IP"
+              if curl -sf --max-time 10 "http://$IP"; then
+                echo "Service is reachable"
+                echo "service_ip=$IP" >> "$GITHUB_OUTPUT"
+                echo "service_url=http://$IP" >> "$GITHUB_OUTPUT"
+                break
+              fi
               echo "Service not yet responding, retrying..."
             fi
             sleep 10
           done
-          echo "::warning::Service did not become reachable within timeout"
+          if [ -z "$SERVICE_IP" ]; then
+            echo "::warning::Service did not get an external IP within timeout"
+          fi
+
+      - name: Write Deployment Summary
+        if: always()
+        run: |
+          SERVICE_IP="${{ steps.service-ip.outputs.service_ip }}"
+          SERVICE_URL="${{ steps.service-ip.outputs.service_url }}"
+          KURED_PODS=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=kured -o name 2>/dev/null | wc -l)
+          WORKLOAD_READY=$(kubectl get deployment zero-downtime-web -n demo -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "N/A")
+          WORKLOAD_DESIRED=$(kubectl get deployment zero-downtime-web -n demo -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "N/A")
+          NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🚀 AKS Kured POC — Deployment Summary
+
+          | Property | Value |
+          |---|---|
+          | **Resource Group** | \`${{ env.RESOURCE_GROUP }}\` |
+          | **Cluster** | \`${{ env.CLUSTER_NAME }}\` |
+          | **Location** | \`${{ env.LOCATION }}\` |
+          | **Nodes** | ${NODE_COUNT} |
+          | **Kured Pods** | ${KURED_PODS} |
+          | **Workload Replicas** | ${WORKLOAD_READY}/${WORKLOAD_DESIRED} ready |
+
+          ### 🌐 Service Endpoint
+          EOF
+
+          if [ -n "$SERVICE_URL" ]; then
+            echo "**Public URL:** [${SERVICE_URL}](${SERVICE_URL})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Service external IP not available yet. Check the cluster manually." >> "$GITHUB_STEP_SUMMARY"
+          fi
