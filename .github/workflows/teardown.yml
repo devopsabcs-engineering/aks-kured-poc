@@ -16,6 +16,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: write
 
 env:
   RESOURCE_GROUP: rg-aks-kured-${{ github.event.inputs.environment || 'poc' }}
@@ -68,3 +69,34 @@ jobs:
           echo "Waiting for resource group deletion to complete..."
           az group wait --deleted --resource-group ${{ env.RESOURCE_GROUP }} --timeout 1800
           echo "Resource group ${{ env.RESOURCE_GROUP }} deleted successfully."
+
+  disable-test-schedule:
+    name: Disable Test Workflow Schedule
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Disable Test Workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Disabling scheduled test workflow to prevent failed cron runs..."
+          gh api \
+            --method PUT \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/actions/workflows/test.yml/disable"
+          echo "Test workflow (test.yml) has been disabled."
+          echo ""
+          echo "To re-enable, go to Actions > Test AKS Kured POC > ··· > Enable workflow"
+
+      - name: Write Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🧹 Teardown Summary
+
+          | Action | Status |
+          |---|---|
+          | **Resource group** \`${{ env.RESOURCE_GROUP }}\` | Deletion initiated |
+          | **Test workflow schedule** (test.yml) | ✅ Disabled |
+
+          > Re-enable the test workflow from **Actions > Test AKS Kured POC > ··· > Enable workflow** after redeploying.
+          EOF
