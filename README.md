@@ -68,6 +68,8 @@ aks-kured-poc/
 │   ├── availability-probe.sh   # Continuous HTTP probe with CSV output
 │   ├── e2e-test.sh             # Full end-to-end reboot validation
 │   └── collect-artifacts.sh    # Gathers proof artifacts from the cluster
+├── test-results/
+│   └── availability-history.csv # Cumulative test results (auto-updated by CI)
 ├── .gitignore
 └── README.md
 ```
