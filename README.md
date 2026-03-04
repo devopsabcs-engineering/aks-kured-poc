@@ -417,45 +417,39 @@ KubeNodeInventory
 
 **Pod lifecycle events during reboots:**
 
+> **Note:** Container Insights only collects `Warning` events by default.
+> Normal pod scheduling events (`Scheduled`, `Pulled`, `Started`) are not captured.
+> The query below shows warning-level events that occur during node reboots.
+
 ```kql
 KubeEvents
 | where TimeGenerated > ago(4h)
-| where Namespace == "demo"
-| where Reason in ("Killing", "Scheduled", "Pulled", "Started", "Created")
-| project TimeGenerated, Name, Reason, Message
+| where Namespace in ("demo", "kube-system", "")
+| where Reason in ("NodeNotReady", "Rebooted", "KubeletIsDown", "Killing",
+                   "FailedScheduling", "Unhealthy", "FailedMount",
+                   "FailedCreatePodSandBox", "ContainerdStart")
+| project TimeGenerated, Namespace, Name, Reason, Message, ObjectKind
 | order by TimeGenerated asc
 ```
 
 **Kured container logs:**
 
-> **Note:** The `omsagent` addon populates the `ContainerLog` table (v1). If you
-> have migrated to Azure Monitor Agent with data collection rules, use
-> `ContainerLogV2` instead.
-
 ```kql
-ContainerLog
+ContainerLogV2
 | where TimeGenerated > ago(4h)
-| where ContainerID in (
-    KubePodInventory
-    | where Namespace == "kube-system"
-    | where Name startswith "kured-"
-    | distinct ContainerID
-)
-| project TimeGenerated, LogEntry
+| where PodNamespace == "kube-system"
+| where PodName startswith "kured-"
+| project TimeGenerated, PodName, LogMessage
 | order by TimeGenerated asc
 ```
 
 **Verify zero gaps in application availability:**
 
 ```kql
-ContainerLog
+ContainerLogV2
 | where TimeGenerated > ago(4h)
-| where ContainerID in (
-    KubePodInventory
-    | where Namespace == "demo"
-    | where Name startswith "zero-downtime-web"
-    | distinct ContainerID
-)
+| where PodNamespace == "demo"
+| where PodName startswith "zero-downtime-web"
 | summarize Count = count() by bin(TimeGenerated, 1m)
 | order by TimeGenerated asc
 ```

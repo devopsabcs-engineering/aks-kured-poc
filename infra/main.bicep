@@ -48,6 +48,61 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
   }
 }
 
+// Data Collection Rule for Container Insights (Azure Monitor Agent)
+resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' = {
+  name: '${clusterName}-dcr'
+  location: location
+  tags: tags
+  properties: {
+    dataSources: {
+      extensions: [
+        {
+          name: 'ContainerInsightsExtension'
+          extensionName: 'ContainerInsights'
+          streams: [
+            'Microsoft-ContainerLogV2'
+            'Microsoft-KubeEvents'
+            'Microsoft-KubePodInventory'
+            'Microsoft-KubeNodeInventory'
+            'Microsoft-KubeServices'
+            'Microsoft-Perf'
+          ]
+          extensionSettings: {
+            dataCollectionSettings: {
+              interval: '1m'
+              namespaceFilteringMode: 'Off'
+              enableContainerLogV2: true
+            }
+          }
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        {
+          workspaceResourceId: logAnalyticsWorkspace.id
+          name: 'ciworkspace'
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: [
+          'Microsoft-ContainerLogV2'
+          'Microsoft-KubeEvents'
+          'Microsoft-KubePodInventory'
+          'Microsoft-KubeNodeInventory'
+          'Microsoft-KubeServices'
+          'Microsoft-Perf'
+        ]
+        destinations: [
+          'ciworkspace'
+        ]
+      }
+    ]
+  }
+}
+
 // AKS Managed Cluster
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
   name: clusterName
@@ -82,6 +137,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         enabled: true
         config: {
           logAnalyticsWorkspaceResourceID: logAnalyticsWorkspace.id
+          useAADAuth: 'true'
         }
       }
     }
@@ -89,6 +145,15 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
       upgradeChannel: 'patch'
       nodeOSUpgradeChannel: 'Unmanaged'  // Critical: lets unattended-upgrades + Kured handle reboots
     }
+  }
+}
+
+// Associate DCR with AKS cluster
+resource dataCollectionRuleAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = {
+  name: '${clusterName}-dcra'
+  scope: aksCluster
+  properties: {
+    dataCollectionRuleId: dataCollectionRule.id
   }
 }
 
