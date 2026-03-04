@@ -53,9 +53,9 @@ aks-kured-poc/
 │   └── workflows/
 │       ├── deploy.yml          # Provisions AKS, installs Kured, deploys workload (idempotent)
 │       ├── test.yml            # Runs availability test and simulates reboots (wide window by default)
-│       └── teardown.yml        # Deletes the resource group
+│       └── teardown.yml        # Deletes the resource group and disables test schedule
 ├── infra/
-│   ├── main.bicep              # AKS cluster + Log Analytics (Bicep)
+│   ├── main.bicep              # AKS cluster + Log Analytics + Data Collection Rule (Bicep)
 │   └── parameters.json         # Default parameter values
 ├── k8s/
 │   ├── kured-values.yaml       # Kured Helm values
@@ -71,7 +71,8 @@ aks-kured-poc/
 ├── test-results/
 │   └── availability-history.csv # Cumulative test results (auto-updated by CI)
 ├── .gitignore
-└── README.md
+├── README.md
+└── README.fr.md            # French translation
 ```
 
 ## Prerequisites
@@ -137,8 +138,8 @@ Add the following secrets to your repository under **Settings > Secrets and vari
 
 1. Push this repository to GitHub with the OIDC secrets configured.
 2. Go to **Actions** and trigger the **Deploy AKS Kured POC** (`deploy.yml`) workflow. Accept the defaults or override location, node count, etc. When the workflow finishes, the **job summary** displays a clickable public URL for the deployed service.
-3. Once deployment completes, trigger the **Test AKS Kured POC** (`test.yml`) workflow. Set `simulate_reboot` to `true` to create sentinel files on all nodes. By default the test workflow uses a **24/7 reboot window** (all days, 0 AM -- 11:59 PM) so reboots trigger immediately without waiting for the narrow production window. The workflow also runs on a **15-minute cron schedule** to continuously populate availability history.
-4. After validation, trigger the **Teardown AKS Kured POC** (`teardown.yml`) workflow. Type `DELETE` when prompted to confirm.
+3. Once deployment completes, trigger the **Test AKS Kured POC** (`test.yml`) workflow. Set `simulate_reboot` to `true` to create sentinel files on all nodes. By default the test workflow uses a **24/7 reboot window** (all days, 0 AM -- 11:59 PM) so reboots trigger immediately without waiting for the narrow production window. The workflow also runs on a **30-minute cron schedule** to continuously populate availability history.
+4. After validation, trigger the **Teardown AKS Kured POC** (`teardown.yml`) workflow. Type `DELETE` when prompted to confirm. The teardown also **disables the test workflow schedule** to prevent failed cron runs against a deleted cluster.
 
 > **Tip:** Both `deploy.yml` and `test.yml` are fully idempotent and safe to re-run at any time.
 
@@ -320,7 +321,7 @@ See the [Monitoring](#monitoring) section for KQL queries to validate in Azure P
 
 ### Step 8: Teardown
 
-Trigger the `teardown.yml` workflow and type `DELETE` to confirm. This deletes the entire resource group.
+Trigger the `teardown.yml` workflow and type `DELETE` to confirm. This deletes the entire resource group and **disables the test workflow schedule**.
 
 ## Testing
 
@@ -474,7 +475,7 @@ ContainerLogV2
 
 ### Option A: GitHub Actions
 
-Trigger the `teardown.yml` workflow and type `DELETE` to confirm. The workflow deletes the entire resource group (`rg-aks-kured-poc`) and all resources within it.
+Trigger the `teardown.yml` workflow and type `DELETE` to confirm. The workflow deletes the entire resource group (`rg-aks-kured-poc`) and all resources within it. It also **disables the test workflow schedule** to prevent failed cron runs.
 
 ### Option B: Azure CLI
 
