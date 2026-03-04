@@ -70,7 +70,12 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' 
           extensionSettings: {
             dataCollectionSettings: {
               interval: '1m'
-              namespaceFilteringMode: 'Off'
+              namespaceFilteringMode: 'Include'
+              namespaces: [
+                'kube-system'
+                'demo'
+                'default'
+              ]
               enableContainerLogV2: true
             }
           }

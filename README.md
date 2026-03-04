@@ -434,6 +434,11 @@ KubeEvents
 
 **Kured container logs:**
 
+> **Note:** `kube-system` logs require the DCR to be configured with
+> `namespaceFilteringMode: Include` and `kube-system` in the namespaces list.
+> After deploying with `deploy.yml`, allow 5--10 minutes for the agent to start
+> collecting.
+
 ```kql
 ContainerLogV2
 | where TimeGenerated > ago(4h)
@@ -441,6 +446,17 @@ ContainerLogV2
 | where PodName startswith "kured-"
 | project TimeGenerated, PodName, LogMessage
 | order by TimeGenerated asc
+```
+
+**Reboot count per node (distinct boot IDs):**
+
+```kql
+KubeEvents
+| where TimeGenerated > ago(24h)
+| where Reason == "Rebooted"
+| extend BootId = extract("boot id: ([a-f0-9-]+)", 1, Message)
+| summarize Reboots = dcount(BootId), LastReboot = max(TimeGenerated) by Name
+| order by Name asc
 ```
 
 **Verify zero gaps in application availability:**

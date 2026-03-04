@@ -403,15 +403,15 @@ jobs:
           INDEX=0
           for NODE in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | sort); do
             INDEX=$((INDEX + 1))
-            # Use host's journalctl via chroot to list boots (most reliable on Ubuntu/systemd nodes)
-            BOOTS=$(kubectl debug "node/${NODE}" -it --image=busybox:1.36 -- \
-              sh -c "chroot /host journalctl --list-boots 2>/dev/null | wc -l" 2>/dev/null || echo "1")
-            BOOTS=$(echo "$BOOTS" | tr -dc '0-9')
-            BOOTS=${BOOTS:-1}
-            # Reboots = boots - 1 (first boot is initial provisioning)
-            REBOOTS=$((BOOTS - 1))
-            [ "$REBOOTS" -lt 0 ] && REBOOTS=0
-            echo "  ${NODE}: ${REBOOTS} reboots (${BOOTS} boots)"
+            # Count distinct boot IDs from Kubernetes Rebooted events (survives across runs)
+            REBOOTS=$(kubectl get events -A --field-selector "reason=Rebooted,involvedObject.name=${NODE}" \
+              --no-headers 2>/dev/null | wc -l || echo "0")
+            REBOOTS=$(echo "$REBOOTS" | tr -dc '0-9')
+            REBOOTS=${REBOOTS:-0}
+            # Also check the kured reboot annotation as supplementary info
+            ANNOTATION=$(kubectl get node "$NODE" \
+              -o jsonpath='{.metadata.annotations.weave\.works/kured-most-recent-reboot-needed}' 2>/dev/null || echo "none")
+            echo "  ${NODE}: ${REBOOTS} reboot event(s), last-reboot-needed: ${ANNOTATION}"
             echo "node${INDEX}_name=${NODE}" >> "$GITHUB_OUTPUT"
             echo "node${INDEX}_reboots=${REBOOTS}" >> "$GITHUB_OUTPUT"
           done
