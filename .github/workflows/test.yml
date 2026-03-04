@@ -1,6 +1,8 @@
 name: Test AKS Kured POC
 
 on:
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       environment:
