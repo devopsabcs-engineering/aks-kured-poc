@@ -33,8 +33,9 @@ configuration:
   logFormat: "text"
 
 # Metrics for monitoring
+# ServiceMonitor requires Prometheus Operator CRDs; disabled for POC
 metrics:
-  create: true
+  create: false
   labels: {}
   interval: 60s
 
