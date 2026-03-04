@@ -403,15 +403,12 @@ jobs:
           INDEX=0
           for NODE in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | sort); do
             INDEX=$((INDEX + 1))
-            # Count distinct boot IDs from Kubernetes Rebooted events (survives across runs)
-            REBOOTS=$(kubectl get events -A --field-selector "reason=Rebooted,involvedObject.name=${NODE}" \
-              --no-headers 2>/dev/null | wc -l || echo "0")
-            REBOOTS=$(echo "$REBOOTS" | tr -dc '0-9')
+            # Count Rebooted events: field-selector only supports involvedObject.name, so grep for Rebooted
+            REBOOTS=$(kubectl get events -A \
+              --field-selector "involvedObject.name=${NODE}" \
+              --no-headers 2>/dev/null | grep -c "Rebooted" || true)
             REBOOTS=${REBOOTS:-0}
-            # Also check the kured reboot annotation as supplementary info
-            ANNOTATION=$(kubectl get node "$NODE" \
-              -o jsonpath='{.metadata.annotations.weave\.works/kured-most-recent-reboot-needed}' 2>/dev/null || echo "none")
-            echo "  ${NODE}: ${REBOOTS} reboot event(s), last-reboot-needed: ${ANNOTATION}"
+            echo "  ${NODE}: ${REBOOTS} reboot event(s)"
             echo "node${INDEX}_name=${NODE}" >> "$GITHUB_OUTPUT"
             echo "node${INDEX}_reboots=${REBOOTS}" >> "$GITHUB_OUTPUT"
           done
