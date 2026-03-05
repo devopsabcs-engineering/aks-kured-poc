@@ -214,6 +214,25 @@ Pour modifier la taille des VM, remplacez l'entrée `vm_size` lors du
 déclenchement de `deploy.yml` ou mettez à jour le paramètre `vmSize` dans
 `infra/main.bicep`.
 
+### Tolérance aux échecs et tentatives automatiques
+
+Pendant les redémarrages actifs des nœuds, l'Azure Load Balancer achemine
+occasionnellement une requête de sonde vers un nœud en cours de drainage dans les
+1 à 3 secondes avant la mise à jour du pool backend. La sonde de disponibilité
+gère cela avec deux mécanismes :
+
+* **Triple tentative** -- Lorsqu'un échec de connexion (HTTP `000`) survient, la
+  sonde réessaie jusqu'à 3 fois avec des intervalles de 1 seconde. Les requêtes
+  qui réussissent après une tentative sont comptabilisées comme « transitoires »
+  (réussies) plutôt que comme des échecs.
+* **Tolérance aux échecs** -- L'entrée `max_failures` (par défaut : `2`) autorise
+  un petit nombre d'échecs réels sans marquer l'ensemble du test comme FAIL.
+  Définissez-la à `0` pour le mode strict.
+
+Avec ces deux mécanismes, le résultat typique pendant les redémarrages actifs est
+une disponibilité de 100 % ou un PASS avec un avertissement pour 1 à 2 échecs
+transitoires.
+
 ### Remplacement de la fenêtre de perturbation pour les démonstrations
 
 Par défaut, Kured ne redémarre que dans la fenêtre 2--6 h UTC en semaine. Pour une démonstration immédiate, élargissez la fenêtre :
@@ -239,6 +258,7 @@ Le workflow de test expose ces paramètres d'entrée :
 | `kured_start_time` | `0am` | Heure de début de la fenêtre de redémarrage |
 | `kured_end_time` | `11:59pm` | Heure de fin de la fenêtre de redémarrage |
 | `kured_reboot_days` | `mo,tu,we,th,fr,sa,su` | Liste séparée par des virgules des jours de redémarrage autorisés |
+| `max_failures` | `2` | Échecs de sonde autorisés avant FAIL (0 = strict) |
 
 ## Guide de démonstration
 
@@ -364,6 +384,7 @@ Les exécutions planifiées utilisent les valeurs d'entrée par défaut :
 | `kured_start_time` | `0am` |
 | `kured_end_time` | `11:59pm` |
 | `kured_reboot_days` | `mo,tu,we,th,fr,sa,su` |
+| `max_failures` | `2` |
 
 > **Pourquoi 20 minutes ?** Kured redémarre les nœuds un par un. Avec un intervalle
 > de sondage de 1 minute et un délai de libération du verrou de 1 minute, chaque nœud

@@ -208,6 +208,22 @@ the backend pool is updated, resulting in a single failed probe per reboot cycle
 To change the VM size, override the `vm_size` input when triggering `deploy.yml`
 or update the `vmSize` parameter in `infra/main.bicep`.
 
+### Failure tolerance and retries
+
+During active node reboots, the Azure Load Balancer occasionally routes a probe
+request to a draining node in the 1--3 seconds before the backend pool is
+updated. The availability probe handles this with two mechanisms:
+
+* **Triple retry** -- When a connection failure (HTTP `000`) occurs, the probe
+  retries up to 3 times with 1-second intervals. Requests that succeed on retry
+  are counted as "transient" (successful) rather than failures.
+* **Failure tolerance** -- The `max_failures` input (default: `2`) allows a small
+  number of genuine failures without marking the entire test as FAIL. Set to `0`
+  for strict mode.
+
+With both mechanisms, the typical result during active reboots is 100%
+availability or a PASS with a warning for 1--2 transient failures.
+
 ### Overriding the disruption window for demos
 
 By default, Kured only reboots within the 2--6 AM UTC weekday window. To override this for an immediate demo, widen the window:
@@ -232,6 +248,7 @@ The test workflow exposes these as input parameters:
 | `kured_start_time` | `0am` | Reboot window start time |
 | `kured_end_time` | `11:59pm` | Reboot window end time |
 | `kured_reboot_days` | `mo,tu,we,th,fr,sa,su` | Comma-separated list of allowed reboot days |
+| `max_failures` | `2` | Allowed probe failures before FAIL (0 = strict) |
 
 ## Demo Runbook
 
@@ -356,6 +373,7 @@ Scheduled runs use the default input values:
 | `kured_start_time` | `0am` |
 | `kured_end_time` | `11:59pm` |
 | `kured_reboot_days` | `mo,tu,we,th,fr,sa,su` |
+| `max_failures` | `2` |
 
 > **Why 20 minutes?** Kured reboots nodes one at a time. With a 1-minute poll
 > interval and a 1-minute lock release delay, each node takes roughly 5--7 minutes
