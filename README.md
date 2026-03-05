@@ -366,6 +366,13 @@ To pause scheduled runs, disable the workflow from **Actions > Test AKS Kured PO
 
 > **Important:** The schedule assumes the AKS cluster is already deployed. If the cluster has been torn down, disable the schedule to avoid failed runs.
 
+> **Known issue -- Azure policy auto-shutdown:** Some Azure subscriptions enforce
+> policies that stop or deallocate AKS clusters at midnight. When the cluster is
+> stopped, kubectl cannot reach the API server and scheduled test runs will fail
+> with `dial tcp: lookup ... no such host`. If your subscription has such a policy,
+> either disable the cron schedule outside business hours or re-run `deploy.yml`
+> each morning to start the cluster before tests resume.
+
 ### End-to-end test
 
 The `scripts/e2e-test.sh` script runs a full validation cycle: verifies prerequisites, starts a continuous availability probe, creates reboot sentinel files on all nodes, monitors node transitions, and reports pass/fail with detailed metrics.

@@ -375,6 +375,15 @@ Pour mettre en pause les exécutions planifiées, désactivez le workflow depuis
 
 > **Important :** La planification suppose que le cluster AKS est déjà déployé. Si le cluster a été supprimé, désactivez la planification pour éviter les exécutions échouées.
 
+> **Problème connu -- arrêt automatique par politique Azure :** Certains
+> abonnements Azure appliquent des politiques qui arrêtent ou désallouent les
+> clusters AKS à minuit. Lorsque le cluster est arrêté, kubectl ne peut pas
+> atteindre le serveur API et les exécutions planifiées échoueront avec
+> `dial tcp: lookup ... no such host`. Si votre abonnement applique une telle
+> politique, désactivez la planification cron en dehors des heures ouvrables ou
+> relancez `deploy.yml` chaque matin pour démarrer le cluster avant la reprise
+> des tests.
+
 ### Test bout en bout
 
 Le script `scripts/e2e-test.sh` exécute un cycle de validation complet : vérifie les prérequis, lance une sonde de disponibilité continue, crée des fichiers sentinelles de redémarrage sur tous les nœuds, surveille les transitions de nœuds et rapporte la réussite ou l'échec avec des métriques détaillées.
