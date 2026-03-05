@@ -32,6 +32,21 @@ configuration:
   # Logging
   logFormat: "text"
 
+  # --- Notifications ---
+  # Teams / Slack webhook URL for reboot notifications.
+  # Set via Helm --set or KURED_NOTIFY_URL env var.
+  # For Microsoft Teams: create an Incoming Webhook connector in your channel
+  # and paste the URL here (or pass it via deploy.yml input).
+  # Example: https://outlook.office.com/webhook/...
+  # notifyUrl: ""
+
+  # --- Pre/post reboot checks ---
+  # Block reboots if any pod matching this selector is not ready.
+  # This prevents cascading failures: if the previous reboot broke something
+  # and pods can't restart, the next node won't reboot.
+  # blockingPodSelector:
+  #   - "app=zero-downtime-web"
+
 # Metrics for monitoring
 # ServiceMonitor requires Prometheus Operator CRDs; disabled for POC
 metrics:

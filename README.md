@@ -224,6 +224,40 @@ updated. The availability probe handles this with two mechanisms:
 With both mechanisms, the typical result during active reboots is 100%
 availability or a PASS with a warning for 1--2 transient failures.
 
+### Teams / Slack notifications
+
+Kured can send a notification to Microsoft Teams or Slack when a node reboot is
+scheduled. To enable this:
+
+1. In Microsoft Teams, add an **Incoming Webhook** connector to your channel and
+   copy the webhook URL.
+2. Either pass the URL as the `kured_notify_url` input when triggering
+   `deploy.yml`, or store it as the `KURED_NOTIFY_URL` repository secret.
+
+Kured posts a message each time it cordons a node, begins draining, and completes
+a reboot.
+
+### Cascading failure protection
+
+If a node fails to rejoin after reboot (for example, a bad OS update bricks the
+kubelet), Kured's safety mechanisms prevent a full cluster outage:
+
+| Mechanism | How it helps |
+| --- | --- |
+| `lockTtl: 30m` | The cluster-wide lock expires after 30 minutes, so a stuck node does not block all reboots forever |
+| `concurrency: 1` | Only one node reboots at a time; the remaining nodes keep serving traffic |
+| PDB `minAvailable: 2` | Drain is blocked if fewer than 2 pods are available, preventing data-plane outage |
+| `drainTimeout: 300s` | If drain takes too long (pods can't reschedule), Kured aborts |
+
+However, Kured does **not** verify that the previously rebooted node is healthy
+before proceeding to the next. If a bad update consistently breaks nodes, the
+second and third reboots will still occur once the lock expires.
+
+To add an additional safety net, uncomment `blockingPodSelector` in
+`k8s/kured-values.yaml`. This tells Kured to skip the reboot if any pod matching
+the selector (for example `app=zero-downtime-web`) is not ready -- effectively
+blocking cascading reboots when the workload is degraded.
+
 ### Overriding the disruption window for demos
 
 By default, Kured only reboots within the 2--6 AM UTC weekday window. To override this for an immediate demo, widen the window:
