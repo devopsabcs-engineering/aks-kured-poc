@@ -16,7 +16,7 @@ param kubernetesVersion string = ''
 param nodeCount int = 3
 
 @description('VM size for the system node pool.')
-param vmSize string = 'Standard_DS2_v2'
+param vmSize string = 'Standard_D4s_v3'
 
 @description('OS disk size in GB.')
 param osDiskSizeGB int = 30

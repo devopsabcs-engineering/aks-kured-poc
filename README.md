@@ -137,7 +137,7 @@ Add the following secrets to your repository under **Settings > Secrets and vari
 ### Option A: GitHub Actions (recommended)
 
 1. Push this repository to GitHub with the OIDC secrets configured.
-2. Go to **Actions** and trigger the **Deploy AKS Kured POC** (`deploy.yml`) workflow. Accept the defaults or override location, node count, etc. When the workflow finishes, the **job summary** displays a clickable public URL for the deployed service.
+2. Go to **Actions** and trigger the **Deploy AKS Kured POC** (`deploy.yml`) workflow. Accept the defaults or override location, node count, VM size, etc. When the workflow finishes, the **job summary** displays a clickable public URL for the deployed service.
 3. Once deployment completes, trigger the **Test AKS Kured POC** (`test.yml`) workflow. Set `simulate_reboot` to `true` to create sentinel files on all nodes. By default the test workflow uses a **24/7 reboot window** (all days, 0 AM -- 11:59 PM) so reboots trigger immediately without waiting for the narrow production window. The workflow also runs on a **30-minute cron schedule** to continuously populate availability history.
 4. After validation, trigger the **Teardown AKS Kured POC** (`teardown.yml`) workflow. Type `DELETE` when prompted to confirm. The teardown also **disables the test workflow schedule** to prevent failed cron runs against a deleted cluster.
 
@@ -196,6 +196,17 @@ The Kured Helm values in `k8s/kured-values.yaml` define the following behavior:
 | `lockTtl`         | 30m               | Time-to-live for the distributed reboot lock               |
 | `lockReleaseDelay`| 1m                | Delay after reboot before releasing the lock (short for POC) |
 | `concurrency`     | 1                 | Only one node reboots at a time                            |
+
+### VM size and reliability
+
+The default VM size is `Standard_D4s_v3` (4 vCPU / 16 GB RAM). Using a larger VM
+reduces the likelihood of transient probe failures during reboots. On smaller
+sizes such as `Standard_DS2_v2` (2 vCPU / 7 GB RAM), the Azure Load Balancer
+occasionally routes a request to a draining node during the 1--2 seconds before
+the backend pool is updated, resulting in a single failed probe per reboot cycle.
+
+To change the VM size, override the `vm_size` input when triggering `deploy.yml`
+or update the `vmSize` parameter in `infra/main.bicep`.
 
 ### Overriding the disruption window for demos
 

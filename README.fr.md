@@ -140,7 +140,7 @@ Ajoutez les secrets suivants à votre dépôt sous **Settings > Secrets and vari
 ### Option A : GitHub Actions (recommandé)
 
 1. Poussez ce dépôt vers GitHub avec les secrets OIDC configurés.
-2. Accédez à **Actions** et déclenchez le workflow **Deploy AKS Kured POC** (`deploy.yml`). Acceptez les valeurs par défaut ou modifiez la région, le nombre de nœuds, etc. À la fin du workflow, le **résumé du job** affiche une URL publique cliquable pour le service déployé.
+2. Accédez à **Actions** et déclenchez le workflow **Deploy AKS Kured POC** (`deploy.yml`). Acceptez les valeurs par défaut ou modifiez la région, le nombre de nœuds, la taille des VM, etc. À la fin du workflow, le **résumé du job** affiche une URL publique cliquable pour le service déployé.
 3. Une fois le déploiement terminé, déclenchez le workflow **Test AKS Kured POC** (`test.yml`). Définissez `simulate_reboot` sur `true` pour créer des fichiers sentinelles sur tous les nœuds. Par défaut, le workflow de test utilise une **fenêtre de redémarrage 24/7** (tous les jours, 0 h -- 23 h 59) afin que les redémarrages se déclenchent immédiatement sans attendre la fenêtre de production restreinte. Le workflow s'exécute également selon une **planification cron de 30 minutes** pour alimenter en continu l'historique de disponibilité.
 4. Après la validation, déclenchez le workflow **Teardown AKS Kured POC** (`teardown.yml`). Tapez `DELETE` lorsqu'on vous le demande pour confirmer. Le démontage **désactive également la planification du workflow de test** pour éviter les exécutions cron échouées sur un cluster supprimé.
 
@@ -199,6 +199,20 @@ Les valeurs Helm de Kured dans `k8s/kured-values.yaml` définissent le comportem
 | `lockTtl`          | 30m               | Durée de vie du verrou distribué de redémarrage                          |
 | `lockReleaseDelay` | 1m                | Délai après le redémarrage avant de libérer le verrou (court pour la POC)|
 | `concurrency`      | 1                 | Un seul nœud redémarre à la fois                                        |
+
+### Taille des VM et fiabilité
+
+La taille de VM par défaut est `Standard_D4s_v3` (4 vCPU / 16 Go de RAM).
+L'utilisation d'une VM plus grande réduit la probabilité d'échecs de sonde
+transitoires pendant les redémarrages. Avec des tailles plus petites comme
+`Standard_DS2_v2` (2 vCPU / 7 Go de RAM), l'Azure Load Balancer achemine
+occasionnellement une requête vers un nœud en cours de drainage pendant les
+1 à 2 secondes avant la mise à jour du pool backend, entraînant un seul échec de
+sonde par cycle de redémarrage.
+
+Pour modifier la taille des VM, remplacez l'entrée `vm_size` lors du
+déclenchement de `deploy.yml` ou mettez à jour le paramètre `vmSize` dans
+`infra/main.bicep`.
 
 ### Remplacement de la fenêtre de perturbation pour les démonstrations
 
