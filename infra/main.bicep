@@ -69,6 +69,7 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' 
             'Microsoft-KubePodInventory'
             'Microsoft-KubeNodeInventory'
             'Microsoft-KubeServices'
+            'Microsoft-InsightsMetrics'
             'Microsoft-Perf'
           ]
           extensionSettings: {
@@ -102,6 +103,7 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' 
           'Microsoft-KubePodInventory'
           'Microsoft-KubeNodeInventory'
           'Microsoft-KubeServices'
+          'Microsoft-InsightsMetrics'
           'Microsoft-Perf'
         ]
         destinations: [
