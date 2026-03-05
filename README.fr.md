@@ -233,6 +233,43 @@ Avec ces deux mécanismes, le résultat typique pendant les redémarrages actifs
 une disponibilité de 100 % ou un PASS avec un avertissement pour 1 à 2 échecs
 transitoires.
 
+### Notifications Teams / Slack
+
+Kured peut envoyer une notification à Microsoft Teams ou Slack lorsqu'un
+redémarrage de nœud est planifié. Pour l'activer :
+
+1. Dans Microsoft Teams, ajoutez un connecteur **Incoming Webhook** à votre canal
+   et copiez l'URL du webhook.
+2. Transmettez l'URL via l'entrée `kured_notify_url` lors du déclenchement de
+   `deploy.yml`, ou stockez-la comme secret de dépôt `KURED_NOTIFY_URL`.
+
+Kured publie un message chaque fois qu'il cordonne un nœud, commence le drainage
+et termine un redémarrage.
+
+### Protection contre les défaillances en cascade
+
+Si un nœud ne parvient pas à rejoindre le cluster après un redémarrage (par
+exemple, une mise à jour du système qui casse le kubelet), les mécanismes de
+sécurité de Kured empêchent une panne complète du cluster :
+
+| Mécanisme | Comment il aide |
+| --- | --- |
+| `lockTtl: 30m` | Le verrou global expire après 30 minutes ; un nœud bloqué ne bloque pas tous les redémarrages indéfiniment |
+| `concurrency: 1` | Un seul nœud redémarre à la fois ; les nœuds restants continuent de servir le trafic |
+| PDB `minAvailable: 2` | Le drainage est bloqué si moins de 2 pods sont disponibles |
+| `drainTimeout: 300s` | Si le drainage prend trop de temps, Kured abandonne |
+
+Cependant, Kured ne vérifie **pas** que le nœud précédemment redémarré est sain
+avant de passer au suivant. Si une mise à jour défectueuse casse les nœuds de
+manière répétée, les deuxième et troisième redémarrages se produiront quand même
+une fois le verrou expiré.
+
+Pour ajouter un filet de sécurité supplémentaire, décommentez
+`blockingPodSelector` dans `k8s/kured-values.yaml`. Cela indique à Kured de ne
+pas redémarrer si un pod correspondant au sélecteur (par exemple
+`app=zero-downtime-web`) n'est pas prêt -- ce qui bloque effectivement les
+redémarrages en cascade lorsque la charge de travail est dégradée.
+
 ### Remplacement de la fenêtre de perturbation pour les démonstrations
 
 Par défaut, Kured ne redémarre que dans la fenêtre 2--6 h UTC en semaine. Pour une démonstration immédiate, élargissez la fenêtre :

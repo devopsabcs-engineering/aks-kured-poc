@@ -31,6 +31,11 @@ on:
         options:
           - 'true'
           - 'false'
+      kured_notify_url:
+        description: 'Teams/Slack webhook URL for Kured reboot notifications (leave empty to skip)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   id-token: write
@@ -125,11 +130,19 @@ jobs:
 
       - name: Install Kured
         run: |
-          helm upgrade --install kured kured/kured \
+          HELM_ARGS="helm upgrade --install kured kured/kured \
             --namespace kube-system \
             --values ./k8s/kured-values.yaml \
             --wait \
-            --timeout 5m
+            --timeout 5m"
+
+          # Add notify URL if provided (via input or secret)
+          NOTIFY_URL="${{ github.event.inputs.kured_notify_url || secrets.KURED_NOTIFY_URL || '' }}"
+          if [ -n "$NOTIFY_URL" ]; then
+            HELM_ARGS="$HELM_ARGS --set configuration.notifyUrl=$NOTIFY_URL"
+          fi
+
+          eval $HELM_ARGS
 
       - name: Verify Kured DaemonSet
         run: |
