@@ -23,6 +23,14 @@ on:
         required: false
         default: 'Standard_D4s_v3'
         type: string
+      enable_prometheus:
+        description: 'Enable Azure Managed Prometheus + Grafana'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   id-token: write
@@ -34,6 +42,7 @@ env:
   LOCATION: ${{ github.event.inputs.location || 'canadacentral' }}
   NODE_COUNT: ${{ github.event.inputs.node_count || '3' }}
   VM_SIZE: ${{ github.event.inputs.vm_size || 'Standard_D4s_v3' }}
+  ENABLE_PROMETHEUS: ${{ github.event.inputs.enable_prometheus || 'true' }}
 
 jobs:
   deploy-infrastructure:
@@ -72,6 +81,7 @@ jobs:
             location=${{ env.LOCATION }}
             nodeCount=${{ env.NODE_COUNT }}
             vmSize=${{ env.VM_SIZE }}
+            enablePrometheus=${{ env.ENABLE_PROMETHEUS }}
           failOnStdErr: false
 
       - name: Verify Deployment

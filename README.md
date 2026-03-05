@@ -55,7 +55,7 @@ aks-kured-poc/
 │       ├── test.yml            # Runs availability test and simulates reboots (wide window by default)
 │       └── teardown.yml        # Deletes the resource group and disables test schedule
 ├── infra/
-│   ├── main.bicep              # AKS cluster + Log Analytics + Data Collection Rule (Bicep)
+│   ├── main.bicep              # AKS cluster + Log Analytics + DCR + Prometheus + Grafana (Bicep)
 │   └── parameters.json         # Default parameter values
 ├── k8s/
 │   ├── kured-values.yaml       # Kured Helm values
@@ -404,6 +404,19 @@ chmod +x scripts/collect-artifacts.sh
 ```
 
 ## Monitoring
+
+### Azure Managed Prometheus and Grafana
+
+By default, `deploy.yml` enables **Azure Managed Prometheus** metrics collection
+and creates an **Azure Managed Grafana** instance. This provides rich node-level
+metrics (CPU, memory, disk, network) and pre-built Kubernetes dashboards.
+
+After deployment, open the Grafana endpoint shown in the deploy workflow summary
+(or find it in the Azure Portal under the Grafana resource). Built-in dashboards
+for Kubernetes are provisioned automatically.
+
+To disable Prometheus, set the `enable_prometheus` input to `false` when
+triggering `deploy.yml`.
 
 ### kubectl commands
 

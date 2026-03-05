@@ -35,6 +35,12 @@ param tags object = {
   environment: 'poc'
 }
 
+@description('Enable Azure Managed Prometheus metrics collection and Grafana dashboards.')
+param enablePrometheus bool = true
+
+@description('Name of the Azure Managed Grafana instance.')
+param grafanaName string = '${clusterName}-grafana'
+
 // Log Analytics Workspace
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
@@ -156,6 +162,29 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
       upgradeChannel: 'patch'
       nodeOSUpgradeChannel: 'Unmanaged'  // Critical: lets unattended-upgrades + Kured handle reboots
     }
+    azureMonitorProfile: enablePrometheus ? {
+      metrics: {
+        enabled: true
+      }
+    } : null
+  }
+}
+
+// Azure Managed Grafana (optional, for Prometheus dashboards)
+resource grafana 'Microsoft.Dashboard/grafana@2023-09-01' = if (enablePrometheus) {
+  name: grafanaName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    grafanaIntegrations: {
+      azureMonitorWorkspaceIntegrations: []
+    }
   }
 }
 
@@ -175,3 +204,4 @@ output clusterResourceId string = aksCluster.id
 output nodeResourceGroup string = aksCluster.properties.nodeResourceGroup
 output kubeletIdentityObjectId string = aksCluster.properties.identityProfile.kubeletidentity.objectId
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
+output grafanaEndpoint string = enablePrometheus ? grafana.properties.endpoint : ''
