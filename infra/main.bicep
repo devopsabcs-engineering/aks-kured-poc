@@ -49,10 +49,14 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
 }
 
 // Data Collection Rule for Container Insights (Azure Monitor Agent)
+// Must deploy after AKS — the omsagent addon creates the required tables in Log Analytics
 resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2022-06-01' = {
   name: '${clusterName}-dcr'
   location: location
   tags: tags
+  dependsOn: [
+    aksCluster
+  ]
   properties: {
     dataSources: {
       extensions: [
